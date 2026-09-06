@@ -1,0 +1,348 @@
+// SkillPulse Grid — Prisma schema
+// Labour-Market-to-Curriculum Intelligence Platform (SIH26134)
+// SQLite prototype schema with full evidence-traceability data model.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Taxonomy ──────────────────────────────────────────────────────────────────
+
+model TaxonomyVersion {
+  id          String   @id @default(cuid())
+  version     String   @unique // e.g. "ESCO v1.2.0 + India-ext-0.3"
+  baseSystem  String   // e.g. "ESCO"
+  releaseDate DateTime
+  notes       String?
+  isCurrent   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  skills      Skill[]
+  occupations Occupation[]
+}
+
+model Sector {
+  id        String @id @default(cuid())
+  code      String @unique // e.g. "IT-ITeS"
+  name      String
+  createdAt DateTime @default(now())
+
+  skills      Skill[]
+  occupations Occupation[]
+  districts   DistrictSector[]
+  courses     Course[]
+  employers   Employer[]
+  demandSignals DemandSignal[]
+  jobPostings JobPosting[]
+}
+
+model Skill {
+  id              String   @id @default(cuid())
+  uri             String   @unique // e.g. "esco:S12345.7" or "inext:genai-prompt-eng"
+  preferredLabel  String
+  altLabels       String   // pipe-separated alt labels for matching
+  description     String?
+  isEmerging      Boolean  @default(false)
+  isDeclining     Boolean  @default(false)
+  halfLifeYears   Float    @default(2.5)
+  createdAt       DateTime @default(now())
+
+  taxonomyId      String
+  taxonomy        TaxonomyVersion @relation(fields: [taxonomyId], references: [id])
+  sectorId        String
+  sector          Sector   @relation(fields: [sectorId], references: [id])
+
+  occupationSkills OccupationSkill[]
+  courseSkills     CourseSkill[]
+  demandSignals    DemandSignal[]
+  validations      ValidationSignal[]
+  assessments      CandidateAssessment[]
+  recommendations  Recommendation[]
+}
+
+model Occupation {
+  id          String   @id @default(cuid())
+  uri         String   @unique // ESCO occupation URI
+  code        String   @unique // NSQF / CTS code
+  preferredLabel String
+  description String?
+  createdAt   DateTime @default(now())
+
+  taxonomyId  String
+  taxonomy    TaxonomyVersion @relation(fields: [taxonomyId], references: [id])
+  sectorId    String
+  sector      Sector   @relation(fields: [sectorId], references: [id])
+
+  skills      OccupationSkill[]
+  courses     Course[]
+  demandSignals DemandSignal[]
+  candidates  Candidate[]
+}
+
+model OccupationSkill {
+  id            String   @id @default(cuid())
+  occupationId  String
+  skillId       String
+  proficiency   Int      // 1-5 (ESCO skill level)
+  essential     Boolean  @default(true) // essential vs optional
+  createdAt     DateTime @default(now())
+
+  occupation    Occupation @relation(fields: [occupationId], references: [id], onDelete: Cascade)
+  skill         Skill      @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@unique([occupationId, skillId])
+}
+
+// ─── Demand Signals (Observatory + District) ──────────────────────────────────
+
+model District {
+  id        String @id @default(cuid())
+  lgdCode   String @unique // LGD district code
+  name      String
+  stateName String
+  createdAt DateTime @default(now())
+
+  sectors     DistrictSector[]
+  jobPostings JobPosting[]
+  candidates  Candidate[]
+  courses     Course[]
+  demandSignals DemandSignal[]
+}
+
+model DistrictSector {
+  id          String   @id @default(cuid())
+  districtId  String
+  sectorId    String
+  coverage    Float    // 0..1 source coverage confidence for this district/sector
+  createdAt   DateTime @default(now())
+
+  district    District @relation(fields: [districtId], references: [id], onDelete: Cascade)
+  sector      Sector   @relation(fields: [sectorId], references: [id], onDelete: Cascade)
+
+  @@unique([districtId, sectorId])
+}
+
+model JobPosting {
+  id            String   @id @default(cuid())
+  externalId    String   @unique
+  title         String
+  description   String
+  employerName  String
+  employerOrgId String   // grouping key for quorum org diversity
+  districtId    String?
+  sectorId      String
+  postedAt      DateTime
+  isDuplicate   Boolean  @default(false)
+  isNoisy       Boolean  @default(false)
+  confidence    Float    @default(0.7) // extraction confidence 0..1
+  rawSkillHits  String   // pipe-separated raw skill mentions (pre-normalization)
+  createdAt     DateTime @default(now())
+
+  district      District? @relation(fields: [districtId], references: [id])
+  sector        Sector    @relation(fields: [sectorId], references: [id])
+
+  demandSignals DemandSignal[] @relation("DemandSignalPostings")
+  validations   ValidationSignal[]
+}
+
+model DemandSignal {
+  id              String   @id @default(cuid())
+  skillId         String
+  occupationId    String?
+  sectorId        String
+  districtId      String?
+  postingCount    Int      @default(0)
+  sourceCount     Int      @default(0) // distinct organizations contributing
+  trendSlope      Float    @default(0) // postings/month slope
+  trendLabel      String   @default("Stable") // Emerging / Declining / Stable
+  confidence      Float    @default(0.5) // 0..1
+  validationState String   @default("Detected") // Detected / Pending / Validated / Rejected / NeedsReview
+  promotionScore Float    @default(0) // weighted agreement score
+  periodStart     DateTime
+  periodEnd       DateTime
+  createdAt       DateTime @default(now())
+
+  skill           Skill       @relation(fields: [skillId], references: [id])
+  occupation      Occupation? @relation(fields: [occupationId], references: [id])
+  sector          Sector      @relation(fields: [sectorId], references: [id])
+  district        District?   @relation(fields: [districtId], references: [id])
+  postings        JobPosting[]  @relation("DemandSignalPostings")
+  validations     ValidationSignal[]
+  recommendations Recommendation[]
+  validationRequest ValidationRequest?
+}
+
+// ─── Employer Validation Quorum ───────────────────────────────────────────────
+
+model ValidationRequest {
+  id              String   @id @default(cuid())
+  demandSignalId  String   @unique // one active request per signal cluster
+  skillId         String
+  message         String
+  threshold       Float    @default(2.0)
+  minOrganizations Int     @default(3)
+  positiveRatioThreshold Float @default(0.6)
+  deadline        DateTime // 14 days from creation
+  status          String   @default("Open") // Open / Promoted / Rejected / Expired
+  createdAt       DateTime @default(now())
+
+  demandSignal    DemandSignal    @relation(fields: [demandSignalId], references: [id])
+  responses       ValidationResponse[]
+}
+
+model Employer {
+  id            String   @id @default(cuid())
+  name          String
+  orgId         String   @unique // grouping key for quorum org diversity
+  sectorId      String
+  weight         Float    @default(1.0) // quorum weight
+  verified      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  sector        Sector @relation(fields: [sectorId], references: [id])
+  responses     ValidationResponse[]
+  signals       ValidationSignal[]
+}
+
+model ValidationResponse {
+  id            String   @id @default(cuid())
+  requestId     String
+  employerId    String
+  responseType  String   // Confirm / Reject / Qualify
+  reasonCode    String?
+  comment       String?
+  respondedAt   DateTime @default(now())
+
+  request       ValidationRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  employer      Employer          @relation(fields: [employerId], references: [id])
+}
+
+model ValidationSignal {
+  id            String   @id @default(cuid())
+  skillId       String
+  postingId     String?
+  demandSignalId String?
+  employerId    String
+  responseType   String   // Confirm / Reject / Qualify
+  weight        Float    @default(1.0)
+  reasonCode    String?
+  createdAt      DateTime @default(now())
+
+  skill         Skill       @relation(fields: [skillId], references: [id])
+  posting       JobPosting? @relation(fields: [postingId], references: [id])
+  demandSignal  DemandSignal? @relation(fields: [demandSignalId], references: [id])
+  employer      Employer    @relation(fields: [employerId], references: [id])
+}
+
+// ─── Curriculum Mirror + Action Plans ─────────────────────────────────────────
+
+model Course {
+  id          String   @id @default(cuid())
+  code        String   @unique // CTS-style code
+  name        String
+  duration    Int      // months
+  occupationId String?
+  sectorId    String
+  institution String
+  districtId  String?
+  createdAt   DateTime @default(now())
+
+  occupation   Occupation? @relation(fields: [occupationId], references: [id])
+  sector       Sector      @relation(fields: [sectorId], references: [id])
+  district     District?   @relation(fields: [districtId], references: [id])
+  modules      Module[]
+  courseSkills CourseSkill[]
+  recommendations Recommendation[]
+}
+
+model Module {
+  id          String   @id @default(cuid())
+  courseId     String
+  title        String
+  sequence     Int
+  durationHours Int
+  learningOutcome String?
+  createdAt    DateTime @default(now())
+
+  course      Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  courseSkills CourseSkill[]
+}
+
+model CourseSkill {
+  id          String   @id @default(cuid())
+  courseId     String
+  moduleId     String?
+  skillId      String
+  taughtProficiency Int   // 1..5
+  emphasisHours Int     // teaching hours dedicated
+  createdAt    DateTime @default(now())
+
+  course      Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  module      Module?   @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  skill       Skill     @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, skillId])
+}
+
+model Recommendation {
+  id              String   @id @default(cuid())
+  courseId        String
+  demandSignalId  String?
+  skillId         String?
+  bucket          String   // Match / Missing / Emerging / Declining / LowPriority
+  actionType      String   // AddModule / UpdateModule / ReduceEmphasis / ReviewLater
+  priorityBand    String   @default("P2") // P0..P3
+  suggestedOwner  String
+  rationale       String
+  evidenceIds     String   // pipe-separated signal IDs
+  status          String   @default("Proposed") // Proposed / Accepted / Rejected / InProgress / Completed
+  rejectionReason String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  course          Course         @relation(fields: [courseId], references: [id])
+  demandSignal    DemandSignal?  @relation(fields: [demandSignalId], references: [id])
+  skill           Skill?         @relation(fields: [skillId], references: [id])
+}
+
+// ─── Candidate Readiness ───────────────────────────────────────────────────────
+
+model Candidate {
+  id          String   @id @default(cuid())
+  name        String
+  occupationId String
+  districtId  String?
+  createdAt    DateTime @default(now())
+
+  occupation   Occupation @relation(fields: [occupationId], references: [id])
+  district     District?  @relation(fields: [districtId], references: [id])
+  assessments  CandidateAssessment[]
+}
+
+model CandidateAssessment {
+  id          String   @id @default(cuid())
+  candidateId  String
+  skillId      String
+  proficiency  Int      // assessed 1..5
+  assessedAt   DateTime @default(now())
+
+  candidate    Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  skill        Skill     @relation(fields: [skillId], references: [id])
+}
+
+// ─── Audit Log (append-only) ───────────────────────────────────────────────────
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actor     String   // user id or system
+  action    String   // e.g. "recommendation.accepted", "validation.promoted"
+  entityType String
+  entityId  String
+  payload   String   // JSON string
+  createdAt DateTime @default(now())
+}
