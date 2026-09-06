@@ -11,7 +11,7 @@ npm ci
 npm run dev
 ```
 
-The app reads the included `data/demo.db` automatically. It contains generated sample data, not live labour-market information. No environment variables are required for the demo.
+Without database credentials, the app reads the included `data/demo.db`. It contains generated sample data, not live labour-market information. No environment variables are required for the local demo.
 
 ```sh
 npm run typecheck
@@ -21,11 +21,21 @@ npm start
 
 ## Vercel
 
-Import this repository, choose the Next.js framework preset, and deploy using the root directory and default npm settings. The build generates Prisma Client before compiling Next.js. File tracing includes the sample SQLite database in API functions.
+Import this repository, choose the Next.js framework preset, and deploy using the root directory and default npm settings. The build generates Prisma Client before compiling Next.js. File tracing includes the sample SQLite database for local demo mode.
+
+### Persistent database
+
+Connect a dedicated **Turso libSQL** database to the `skillpulse-grid` Vercel project. Set `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` as server-only environment variables, then redeploy. Credentials must never use a `NEXT_PUBLIC_` prefix or be committed to Git.
+
+When credentials are present, all Prisma queries use the hosted database over HTTP. Configuration errors fail explicitly instead of silently reading the local snapshot. Millisecond timestamps are retained for compatibility with the original SQLite data.
+
+The build runs `scripts/import-database.mjs` before compiling the site. On a new empty database, this imports all schema objects and 832 sample rows in a transaction, checks foreign keys, and writes a completion marker. Later builds detect that marker and leave stored records unchanged. Import into an unrelated nonempty database is refused. It does not wipe, reset, or re-seed an existing database. Future schema changes need explicit migrations.
+
+You can also run the initial import with `npm run db:import` after setting the same two environment variables. Use a separate database for preview deployments if testing changes to stored data.
 
 The public deployment is read-only: voting and recommendation writes return HTTP 403 with a demo explanation. The role selector previews personas; it is not authentication. The ticker is a simulated demo feed.
 
-Permanent writes require a hosted database, server-side authentication/authorization, and validation workflow hardening. Do not disable demo mode on a public deployment until those are implemented. Bundled SQLite is not persistent storage on Vercel.
+Connecting the hosted database provides permanent storage. Public write actions remain disabled until server-side authentication/authorization and validation workflow hardening are implemented. Do not disable demo mode on a public deployment until those are implemented. Bundled SQLite is not persistent storage on Vercel.
 
 ## Sample dataset
 
