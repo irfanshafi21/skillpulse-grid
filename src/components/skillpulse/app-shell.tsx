@@ -52,11 +52,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen flex flex-col bg-background bg-mesh">
-      {process.env.NEXT_PUBLIC_DEMO_MODE !== 'false' && (
         <div role="note" className="bg-primary/10 px-4 py-2 text-center text-xs text-foreground">
-          Sample-data demo · Explore all dashboards. Voting and saving changes are disabled.
+          Interactive sample-data demo: Voting and saving are enabled. Changes are shared with all visitors.
         </div>
-      )}
       {/* Header — glass sticky bar */}
       <header className="sticky top-0 z-40 w-full border-b border-border/60 glass">
         <div className="flex min-h-14 flex-wrap items-center gap-3 px-4 py-2 lg:px-6 max-w-[1600px] mx-auto">

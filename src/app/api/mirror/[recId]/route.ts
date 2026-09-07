@@ -2,9 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ recId: string }> }) {
-  if (process.env.DEMO_MODE !== 'false') {
-    return NextResponse.json({ error: 'This is a read-only sample-data demo. Saving changes requires a hosted database and authenticated accounts.' }, { status: 403 })
-  }
   const { recId } = await params
   const body = await req.json().catch(() => ({}))
   const action = body.action as 'accept' | 'reject' | 'start' | 'complete'

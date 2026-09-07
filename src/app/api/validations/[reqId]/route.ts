@@ -2,9 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ reqId: string }> }) {
-  if (process.env.DEMO_MODE !== 'false') {
-    return NextResponse.json({ error: 'This is a read-only sample-data demo. Voting requires a hosted database and authenticated employer accounts.' }, { status: 403 })
-  }
   const { reqId } = await params
   const body = await req.json().catch(() => ({}))
   const employerId = body.employerId as string | undefined
@@ -12,8 +9,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ req
   const reasonCode = body.reasonCode as string | undefined
   const comment = body.comment as string | undefined
 
-  if (!employerId || !responseType) {
-    return NextResponse.json({ error: 'employerId and responseType required' }, { status: 400 })
+  if (typeof employerId !== 'string' || !employerId || !responseType || !['Confirm', 'Reject', 'Qualify'].includes(responseType ?? '') || (reasonCode !== undefined && typeof reasonCode !== 'string') || (comment !== undefined && typeof comment !== 'string')) {
+    return NextResponse.json({ error: 'Valid employerId and responseType required' }, { status: 400 })
   }
 
   const request = await db.validationRequest.findUnique({

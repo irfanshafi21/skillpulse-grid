@@ -33,9 +33,7 @@ The build runs `scripts/import-database.mjs` before compiling the site. On a new
 
 You can also run the initial import with `npm run db:import` after setting the same two environment variables. Use a separate database for preview deployments if testing changes to stored data.
 
-The public deployment is read-only: voting and recommendation writes return HTTP 403 with a demo explanation. The role selector previews personas; it is not authentication. The ticker is a simulated demo feed.
-
-Connecting the hosted database provides permanent storage. Public write actions remain disabled until server-side authentication/authorization and validation workflow hardening are implemented. Do not disable demo mode on a public deployment until those are implemented. Bundled SQLite is not persistent storage on Vercel.
+The public deployment is an interactive sample-data demo: visitors can vote and save recommendation changes in the shared Turso database. The role and employer selectors preview personas; they are not authentication. Do not use this shared demo for private data or verified employer decisions. The ticker is a simulated demo feed. Bundled SQLite is not persistent storage on Vercel.
 
 ## Sample dataset
 
